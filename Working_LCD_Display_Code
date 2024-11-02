@@ -1,0 +1,92 @@
+int BUTTON_1 = D0;
+int BUTTON_2 = D1;
+int BUTTON_3 = D2;
+
+int i; 
+int phoneNumber[10] = {0,0,0,0,0,0,0,0,0,0};
+int state = 0;
+int value;
+int value_2;
+int value_3;
+int number = 0;
+#include <LiquidCrystal_I2C.h>
+LiquidCrystal_I2C lcd(0x27,  16, 2);
+
+void setup() {
+  // put your setup code here, to run once:
+Serial.begin(9600);
+lcd.init();
+  lcd.begin(16, 2);
+  lcd.backlight();
+  lcd.print("Enter Number:");
+  lcd.setCursor(0, 1);
+
+
+pinMode(BUTTON_1, INPUT);
+ pinMode(BUTTON_2, INPUT);
+ pinMode(BUTTON_3, INPUT);
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+
+  int index;
+ //variable de estado
+
+printPhoneNumber();
+
+  value = digitalRead(BUTTON_1);//left button//
+  if(value == LOW)
+  {
+    state=(state-1);
+    if(state<0)
+    {
+      state = 0;
+    }
+    
+    delay(250);
+    phoneNumber[number] = state; 
+    printPhoneNumber();
+  } 
+  
+  value_2 = digitalRead(BUTTON_2);//right button//
+if(value_2==LOW)
+{
+  state = (state+1);
+  if(state>9)
+    {
+      state = 9;
+    }
+  delay(250);
+  phoneNumber[number] = state; 
+  printPhoneNumber();
+}
+
+  value_3 = digitalRead(BUTTON_3);//set button//
+  if (value_3 == LOW)
+  {
+number = number + 1;
+if(number>9 || number<0)
+    {
+      number = 0;
+    } 
+state = 0;
+delay(250);
+printPhoneNumber();
+  }
+  
+
+}
+
+
+void printPhoneNumber()
+{
+  
+  lcd.setCursor(number, 1);
+  for (i = number; i<10; i++)
+{
+  
+  lcd.print(phoneNumber[i]);
+}
+
+}
