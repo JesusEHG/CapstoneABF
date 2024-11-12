@@ -1,0 +1,230 @@
+#include <HardwareSerial.h>
+#include <Wire.h>
+#include "MyLD2410.h"
+#include <M2M_LM75A.h>
+HardwareSerial sensorSerial(1);
+HardwareSerial sim7600(2); //Set up to use UART2 on ESP32 
+MyLD2410 sensor(sensorSerial);
+M2M_LM75A lm75a;
+
+const int RX2_PIN = 33;
+const int TX2_PIN = 32;
+const int RX1_PIN = 4;
+const int TX1_PIN = 5;
+unsigned long prevMillis = 0; 
+const long interval  = 20000; //milliseconds 
+//17872338256
+String phoneNumber = "+19392901122";
+String altPhoneNumber = " ";
+
+bool presenceDetected = false;
+int dataStart;
+
+enum State { 
+  DETECT,
+  TIMER, 
+  FALSE_REJECT,
+  ALERT
+};
+State currentState = DETECT;
+
+
+void setup() {
+  delay(30000);
+  Serial.begin(115200);  // Initialize Serial Monitor
+  sim7600.begin(115200, SERIAL_8N1, RX2_PIN, TX2_PIN);  // Initialize SIM7600G UART
+  sensorSerial.begin(256000, SERIAL_8N1, RX1_PIN, TX1_PIN); //Initialize LD2410
+  Wire.begin();
+  if (!sensor.begin()) {
+    Serial.println("Failed to communicate with the LD2410 sensor.");
+    while (true);  // Stop if sensor communication fails
+  }
+  lm75a.begin();
+  delay(3000);
+  sendATCommand("AT+CGPS=1");
+
+}
+
+void loop() {
+  sensor.check();
+  delay(3000);
+  switch(currentState){
+    case DETECT:
+      if(sensor.check() == MyLD2410::Response::DATA){
+        if(sensor.presenceDetected()){
+          Serial.println("Presence Detected: 1" );
+          prevMillis = millis();
+          currentState = FALSE_REJECT;
+        }
+      }
+    break;
+
+    case FALSE_REJECT:
+      if((millis() - prevMillis) >= interval ){
+        if(sensor.check() == MyLD2410::Response::DATA){
+          if(sensor.presenceDetected()){
+            currentState = ALERT;
+          }    
+          else{
+            prevMillis = millis();
+            currentState = DETECT; 
+          }
+        }
+      }
+    break;
+
+    case ALERT:
+      Serial.println("Send Alerts");
+      prevMillis = millis();
+      float tempF = lm75a.getTemperatureInFarenheit();
+      String coordinates = getCoordinates(); 
+      delay(10000);
+      String alert = "Presence detected!\nCurrent temperature: " + String(tempF);  
+      Serial.println(alert);
+      Serial.println(coordinates);
+      String location = "Approximate location: " + coordinates;
+      delay(10000);
+      sendText(alert);
+      delay(10000);
+      //sendText(location);
+      currentState = DETECT;
+    break;
+      
+  } 
+}
+
+void sendText (String message){
+  sendATCommand("AT+CMGF=1");
+  sendATCommand("AT+CMGS=\""+phoneNumber+"\"");
+  sim7600.print(message); // Send the actual message content
+  delay(100); 
+  sim7600.write(26); // Send CTRL+Z (ASCII 26) to indicate end of message
+}
+
+String getCoordinates(){
+  Serial.println("in Get Coordinates");
+  String gpsData = sendATCommand("AT+CGNSSINFO");
+  delay(1000);
+  bool coordinateValidation = checkDigits(gpsData);
+  if (coordinateValidation == false){
+    return("Location coordinates not found!");
+  }else if (coordinateValidation == true){
+    String relevantData = gpsData.substring(dataStart);
+    String splitData = splitCoordinates(relevantData);
+    return(splitData); 
+  }
+}
+
+String splitCoordinates(String coordinates){
+  Serial.println("in split Coordinates");
+  int countComma = 0;
+  int startData;
+  int endData;
+  for(int i=0; i < coordinates.length(); i++){
+    if (coordinates[i] == ','){
+      countComma++;
+        if(countComma == 4){
+          startData = i + 1;
+        }else if(countComma == 8){
+          endData = i + 1;
+        }
+    }
+  }
+  String latlongCordinates = coordinates.substring(startData, endData);
+  latlongCordinates = coordinateFormatting(latlongCordinates);
+  return(latlongCordinates);
+}
+
+String coordinateFormatting(String coordinates){
+  Serial.println("in Coordinates format");
+  int countComma = 0; 
+  int firstComma;
+  int secondComma;
+  int thirdComma;
+  String firstSign;
+  String firstSide;
+  String secondSide;
+  String secondSign; 
+  for(int i = 0; i < coordinates.length(); i++){
+    if(coordinates[i] == 'N'){
+      firstSide = 'N';
+      firstSign = '+';
+    }else if(coordinates[i] == 'S'){
+      firstSide = 'S';
+      firstSign = '-';
+    }
+    if(coordinates[i] == 'W'){
+      secondSide = 'W';
+      secondSign = '-';
+    }else if(coordinates[i] == 'E'){
+      secondSide = 'E';
+      secondSign = '+';
+    }
+    
+    if(coordinates[i] == ','){
+      countComma++;
+      if(countComma == 1){
+        firstComma = i; 
+      }else if(countComma == 2){
+        secondComma = i + 1;
+      }else if(countComma == 3){
+        thirdComma = i;
+      }
+    }
+  }
+  String lat = coordinates.substring(0, firstComma);
+  String lon = coordinates.substring(secondComma, thirdComma);
+
+  while(lat[0] == '0'){
+    lat.remove(0,1);
+  }
+  while(lon[0] == '0'){
+    lon.remove(0,1);
+  }
+
+  String degLat = lat.substring(0,2);
+  String degLon = lon.substring(0,2);
+  String minLat = lat.substring(2);
+  String minLon = lon.substring(2);
+
+  float degLatNum = degLat.toFloat();
+  float degLonNum = degLon.toFloat();
+  float minLatNum = minLat.toFloat(); 
+  float minLonNum = minLon.toFloat();
+ 
+  minLatNum = minLatNum / 60;
+  minLonNum = minLonNum /60;
+
+  float fixedLat = degLatNum + minLatNum;
+  float fixedLon = degLonNum + minLonNum;
+  String finalLat = String(fixedLat, 6);
+  String finalLon = String(fixedLon, 6);
+  String finalMessage = firstSign + finalLat + "(" + firstSide + "), " + secondSign + finalLon + "(" + secondSide + ")"; 
+  return(finalMessage); 
+}
+
+bool checkDigits(String text){
+  for(int i = 0; i < text.length(); i++){
+    if(isDigit(text[i])){
+      dataStart = i;
+      return true; 
+    }
+  }
+  return false;
+}
+
+String sendATCommand(String command) {
+  String response;
+  //Print command being sent by ESP32 to SIM7600 shown in Monitor for debug
+  Serial.println("Sending: " + command);
+  //Send to SIM7600
+  sim7600.println(command); 
+  delay(2000);
+
+  //Verify that the SIM7600 has a message in store 
+  while(sim7600.available()){
+    response = sim7600.readString(); //Store in a String called response the message from SIM7600
+    Serial.println("Response: " + response); //Print the response to the serial monitor 
+  } //End while loop
+  return response;
+} //End sendATCommand
