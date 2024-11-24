@@ -3,7 +3,7 @@ int BUTTON_2 = D1;
 int BUTTON_3 = D2;
 int confirm_counter=0;
 int i; 
-char string_phonenumber[10] = {0,0,0,0,0,0,0,0,0,0};
+char string_phonenumber[12] = {'+','1',0,0,0,0,0,0,0,0,0,0};
 int phoneNumber[10] = {0,0,0,0,0,0,0,0,0,0};
 int state = 0;
 int value;
@@ -20,10 +20,7 @@ void setup() {
   lcd.begin(16, 2);
   lcd.backlight();
 
-  
-
-
-pinMode(BUTTON_1, INPUT);
+ pinMode(BUTTON_1, INPUT);
  pinMode(BUTTON_2, INPUT);
  pinMode(BUTTON_3, INPUT);
 
@@ -101,15 +98,16 @@ while(confirm_counter == 15)
       if(value == LOW)
       {
         for (i = 0; i < 10; i++) {
-            string_phonenumber[i] = phoneNumber[i] + '0'; // Convert int to char
+            string_phonenumber[i+2] = phoneNumber[i] + '0'; // Convert int to char
         }
-        string_phonenumber[10] = '\0'; // Null-terminate the string
+        string_phonenumber[12] = '\0'; // Null-terminate the string
         lcd.clear();
         lcd.setCursor(0, 0);
         lcd.print("Number saved    ");
         lcd.setCursor(0,1);
         lcd.print(string_phonenumber);
         delay(2000);
+        lcd.clear();
         confirm_counter = 0; // Exit the confirmation loop
         number=0;
        // Serial.println("Phone Number as String: ");
